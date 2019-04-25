@@ -8,19 +8,21 @@ const Async             = require("async");
 const migrate           = require("../lib/migrate");
 
 const optionDefinitions = [
+    { name: 'config', alias: 'c', type: String, description: 'The path to the config file', defaultValue: 'config.json' },
+    { name: 'env', alias: 'e', type: String, description: 'The environment to run the command in', defaultValue: 'development' },
     { name: 'rev', alias: 'r', type: Number, description: 'Set migration revision (default: 0)', defaultValue: 0 },
     { name: 'pos', alias: 'p', type: Number, description: 'Run first migration at pos (default: 0)', defaultValue: 0 },
+    { name: 'fake', alias: 'f', type: Boolean, description: 'Fake migrations', defaultValue: false },
     { name: 'one', type: Boolean, description: 'Do not run next migrations', defaultValue: false },
     { name: 'list', alias: 'l', type: Boolean, description: 'Show migration file list (without execution)', defaultValue: false },
     { name: 'migrations-path', type: String, description: 'The path to the migrations folder' },
-    { name: 'models-path', type: String, description: 'The path to the models folder' },
     { name: 'help', type: Boolean, description: 'Show this message' }
 ];
 
 const options = commandLineArgs(optionDefinitions);
 
 let migrationsDir = path.join(process.env.PWD, options['migrations-path'] || 'migrations'),
-    modelsDir     = path.join(process.env.PWD, options['models-path'] || 'models');
+    configFile     = path.join(process.env.PWD, options['config']);
 
 if (options.help)
 {
@@ -32,9 +34,15 @@ if (options.help)
     process.exit(0);
 }
 
-const Sequelize = require("sequelize");
-const sequelize = require(modelsDir).sequelize;
-const queryInterface = sequelize.getQueryInterface();
+const Sequelize = require('sequelize');
+const dbConfig = require(configFile)[options.env] || {
+    database: 'database_development',
+    username: 'root',
+    password: '',
+    host: 'localhost',
+    dialect: 'mysql',
+};
+const queryInterface = new Sequelize(dbConfig).getQueryInterface();
 
 // execute all migration from
 let fromRevision = options.rev;
@@ -59,8 +67,8 @@ let migrationFiles = fs.readdirSync(migrationsDir)
       let rev = parseInt( path.basename(file).split('-',2)[0]);
       return (rev >= fromRevision);
   });
-  
-console.log("Migrations to execute:");  
+
+console.log("Migrations to execute:");
 migrationFiles.forEach((file) => {
     console.log("\t"+file);
 });
@@ -68,21 +76,27 @@ migrationFiles.forEach((file) => {
 if (options.list)
     process.exit(0);
 
-
-Async.eachSeries(migrationFiles, 
-    function (file, cb) {
-        console.log("Execute migration from file: "+file);
-        migrate.executeMigration(queryInterface, path.join(migrationsDir, file), fromPos, (err) => {
-            if (stop)
-                return cb("Stopped");
-                
-            cb(err);
-        });
-        // set pos to 0 for next migration
-        fromPos = 0;
-    },
-    function(err) {
-        console.log(err);
-        process.exit(0);
-    }
+Async.eachSeries(migrationFiles,
+  function(file, cb) {
+      console.log('Execute migration from file: ' + file);
+      if (options.fake) {
+          migrate.fakeMigration(queryInterface, path.join(migrationsDir, file), file, (err) => {
+              if (stop)
+                  return cb('Stopped');
+              cb(err);
+          });
+      } else {
+          migrate.executeMigration(queryInterface, path.join(migrationsDir, file), fromPos, (err) => {
+              if (stop)
+                  return cb('Stopped');
+              cb(err);
+          });
+          // set pos to 0 for next migration
+          fromPos = 0;
+      }
+  },
+  function(err) {
+      console.log(err);
+      process.exit(0);
+  },
 );

@@ -30,6 +30,7 @@
     "deep-diff": "^0.3.8",
     "js-beautify": "^1.6.14",
     "lodash": "^4.17.4",
+    "mysql2": "^1.6.5",
     "object-hash": "^1.1.8",
     "sequelize": "^4.3.2"
   }
